@@ -55,7 +55,7 @@ for source in "$ROOT"/src/*.c; do
     -c "$source" -o "$CORE_OBJ/$object.o"
 done
 "$CC" $LDFLAGS -o "$DIST/vless-core-e5786-armv5" "$CORE_OBJ"/*.o \
-  "$OPENSSL_PREFIX/lib/libssl.a" "$OPENSSL_PREFIX/lib/libcrypto.a" -pthread -ldl
+  "$OPENSSL_PREFIX/lib/libssl.a" "$OPENSSL_PREFIX/lib/libcrypto.a" -pthread -ldl -latomic
 "$STRIP" "$DIST/vless-core-e5786-armv5"
 
 # Fetch pinned BadVPN tun2socks/lwIP source.
