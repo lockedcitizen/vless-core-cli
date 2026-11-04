@@ -84,6 +84,8 @@ static int tls_pin_file_path(char out[PATH_MAX], char *err, size_t err_cap) {
 
 #ifdef __APPLE__
     snprintf(out, PATH_MAX, "%s", "/private/var/mobile/Library/Preferences/vless-core/xhttp-pins.txt");
+#elif defined(__ANDROID__)
+    snprintf(out, PATH_MAX, "%s", "/online/vpn/config/tls-pins.txt");
 #else
     struct passwd pw;
     struct passwd *result = NULL;
