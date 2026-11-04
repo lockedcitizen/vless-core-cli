@@ -45,12 +45,12 @@ Do **not** substitute a V7R11 / Hi6921 / E3372h module. The E3372h community mod
 
 ## Required inputs before building
 
-The two device-captured files have now been added to this branch in compressed Base64 form to keep the repository text-only:
+The following two files were captured from the user's E5786 and must be committed unchanged to this directory:
 
-1. `kernel/e5786-v7r2/config/e5786-running.config.gz.b64` — gzip-compressed text from `/proc/config.gz`, Base64 encoded.
-2. `kernel/e5786-v7r2/config/e5786-exported-symbols.txt.gz.b64` — gzip-compressed exported symbol names from `/proc/kallsyms`, Base64 encoded.
+1. `e5786-running.config` — decompressed text from `/proc/config.gz`.
+2. `e5786-exported-symbols.txt` — exported symbol names parsed from `/proc/kallsyms`.
 
-The workflow decodes both files, checks key configuration values and known exported symbols, then passes the restored files to the build script. These are the user's captured E5786 files, not values copied from a different Huawei model.
+The GitHub Actions workflow checks key configuration values and required symbols before building. The files are device captures, not values copied from a different Huawei model.
 
 The workflow also requires two HTTPS archive URLs and SHA-256 digests supplied at dispatch:
 
@@ -95,7 +95,7 @@ adb pull /online/vpn/run/e5786-v7r2-probe/e5786-running.config .
 adb pull /online/vpn/run/e5786-v7r2-probe/e5786-exported-symbols.txt .
 ```
 
-The captures are already stored in `kernel/e5786-v7r2/config/` on this research branch. They contain kernel build metadata and exported symbol names, not VLESS credentials.
+The user has the capture files as a ZIP. After extracting them, commit both files to `kernel/e5786-v7r2/config/` on this research branch. They contain kernel build metadata and exported symbol names, not VLESS credentials.
 
 ## Safety rule
 
