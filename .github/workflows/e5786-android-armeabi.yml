@@ -137,6 +137,75 @@ jobs:
               "#define RESOLVER_QUEUE_LIMIT 16"
           )
 
+
+          # This router daemon never forks; omit logger fork callbacks on Android/Bionic.
+          replace_once(
+              "src/core_log.c",
+              "static int log_fork_registered,log_exit_registered;",
+              "#ifndef __ANDROID__\\n"
+              "static int log_fork_registered;\\n"
+              "#endif\\n"
+              "static int log_exit_registered;"
+          )
+
+          replace_once(
+              "src/core_log.c",
+              "static void log_fork_prepare(void) { pthread_mutex_lock(&g_log_mutex); }\\n"
+              "static void log_fork_parent(void) { pthread_mutex_unlock(&g_log_mutex); }\\n"
+              "static void log_fork_child(void) {\\n"
+              "    for (unsigned i=0;i<2;i++) {\\n"
+              "        if (logger.wake[i] >= 0) close(logger.wake[i]);\\n"
+              "        if (logger.completed[i] >= 0) close(logger.completed[i]);\\n"
+              "        logger.wake[i]=logger.completed[i]=-1;\\n"
+              "    }\\n"
+              "    memset(logger.records,0,sizeof(logger.records)); memset(&logger.active,0,sizeof(logger.active));\\n"
+              "    memset(logger.dropped,0,sizeof(logger.dropped)); memset(logger.report,0,sizeof(logger.report));\\n"
+              "    logger.started=logger.busy=0; logger.count=logger.ordinary=0; logger.sequence=logger.retry_ms=0;\\n"
+              "    pthread_mutex_unlock(&g_log_mutex);\\n"
+              "}",
+              "#ifndef __ANDROID__\\n"
+              "static void log_fork_prepare(void) { pthread_mutex_lock(&g_log_mutex); }\\n"
+              "static void log_fork_parent(void) { pthread_mutex_unlock(&g_log_mutex); }\\n"
+              "static void log_fork_child(void) {\\n"
+              "    for (unsigned i=0;i<2;i++) {\\n"
+              "        if (logger.wake[i] >= 0) close(logger.wake[i]);\\n"
+              "        if (logger.completed[i] >= 0) close(logger.completed[i]);\\n"
+              "        logger.wake[i]=logger.completed[i]=-1;\\n"
+              "    }\\n"
+              "    memset(logger.records,0,sizeof(logger.records)); memset(&logger.active,0,sizeof(logger.active));\\n"
+              "    memset(logger.dropped,0,sizeof(logger.dropped)); memset(logger.report,0,sizeof(logger.report));\\n"
+              "    logger.started=logger.busy=0; logger.count=logger.ordinary=0; logger.sequence=logger.retry_ms=0;\\n"
+              "    pthread_mutex_unlock(&g_log_mutex);\\n"
+              "}\\n"
+              "#endif"
+          )
+
+          replace_once(
+              "src/core_log.c",
+              "    if (!log_fork_registered) {\\n"
+              "        if (pthread_atfork(log_fork_prepare,log_fork_parent,log_fork_child)) return -1;\\n"
+              "        log_fork_registered=1;\\n"
+              "    }",
+              "#ifndef __ANDROID__\\n"
+              "    if (!log_fork_registered) {\\n"
+              "        if (pthread_atfork(log_fork_prepare,log_fork_parent,log_fork_child)) return -1;\\n"
+              "        log_fork_registered=1;\\n"
+              "    }\\n"
+              "#endif"
+          )
+
+          replace_once(
+              "src/tls_certificate.c",
+              "#ifdef __APPLE__\\n"
+              "    snprintf(out, PATH_MAX, \"%s\", \"/private/var/mobile/Library/Preferences/vless-core/xhttp-pins.txt\");\\n"
+              "#else",
+              "#ifdef __APPLE__\\n"
+              "    snprintf(out, PATH_MAX, \"%s\", \"/private/var/mobile/Library/Preferences/vless-core/xhttp-pins.txt\");\\n"
+              "#elif defined(__ANDROID__)\\n"
+              "    snprintf(out, PATH_MAX, \"%s\", \"/online/vpn/config/tls-pins.txt\");\\n"
+              "#else"
+          )
+
           print("E5786 compatibility patches applied")
           PY
 
