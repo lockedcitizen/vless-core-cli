@@ -2,7 +2,7 @@ name: E5786 ARMv5TE VLESS + TUN
 
 on:
   push:
-    branches: [e5786-armv5-tun]
+    branches: [main, e5786-armv5-tun]
     paths:
       - ".github/workflows/e5786-armv5-tun.yml"
       - "scripts/build-e5786-armv5.sh"
