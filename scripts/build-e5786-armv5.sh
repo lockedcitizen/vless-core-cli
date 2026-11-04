@@ -78,7 +78,7 @@ python3 "$ROOT/scripts/patch-badvpn-e5786.py" "$WORK/badvpn"
 "$STRIP" "$DIST/tun2socks-e5786-armv5"
 
 cp "$ROOT/e5786/start.sh" "$ROOT/e5786/stop.sh" "$ROOT/e5786/route-test.sh" "$DIST/"
-cp "$ROOT/e5786/README.md" "$DIST/"
+cp "$ROOT/e5786/README.md" "$ROOT/e5786/BADVPN-BSD-3-CLAUSE.txt" "$DIST/"
 cp "$ROOT/THIRD_PARTY_LICENSES.txt" "$DIST/" 2>/dev/null || true
 cat > "$DIST/BUILD-INFO.txt" <<EOF
 Target: ARMv5TE, ARM EABI, soft-float
