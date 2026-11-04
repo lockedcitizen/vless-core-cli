@@ -1,0 +1,126 @@
+name: E5786 Hi6930 V7R2 TUN module candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_source_url:
+        description: HTTPS URL to a tar.gz or tar.xz of the complete extracted V7R2 kernel source
+        required: true
+        type: string
+      kernel_source_sha256:
+        description: SHA-256 of the kernel source archive
+        required: true
+        type: string
+      toolchain_url:
+        description: HTTPS URL to an archive containing the ARM GCC 4.6.x toolchain
+        required: true
+        type: string
+      toolchain_sha256:
+        description: SHA-256 of the toolchain archive
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-tun-candidate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libncurses-dev kmod python3 binutils curl xz-utils
+
+      - name: Validate inputs and download checksummed archives
+        env:
+          SOURCE_URL: ${{ inputs.kernel_source_url }}
+          SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
+          TOOLCHAIN_URL: ${{ inputs.toolchain_url }}
+          TOOLCHAIN_SHA256: ${{ inputs.toolchain_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_URL" == https://* ]] || { echo "Kernel source URL must use HTTPS"; exit 1; }
+          [[ "$TOOLCHAIN_URL" == https://* ]] || { echo "Toolchain URL must use HTTPS"; exit 1; }
+          [[ "$SOURCE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Invalid source SHA-256"; exit 1; }
+          [[ "$TOOLCHAIN_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Invalid toolchain SHA-256"; exit 1; }
+
+          mkdir -p "$RUNNER_TEMP/e5786-source" "$RUNNER_TEMP/e5786-toolchain"
+          curl --fail --location --retry 3 --retry-all-errors "$SOURCE_URL" -o "$RUNNER_TEMP/kernel-source.tar"
+          curl --fail --location --retry 3 --retry-all-errors "$TOOLCHAIN_URL" -o "$RUNNER_TEMP/toolchain.tar"
+
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/kernel-source.tar" | sha256sum --check -
+          echo "$TOOLCHAIN_SHA256  $RUNNER_TEMP/toolchain.tar" | sha256sum --check -
+
+          tar -xf "$RUNNER_TEMP/kernel-source.tar" -C "$RUNNER_TEMP/e5786-source"
+          tar -xf "$RUNNER_TEMP/toolchain.tar" -C "$RUNNER_TEMP/e5786-toolchain"
+
+          KERNEL_SOURCE_FILE="$(find "$RUNNER_TEMP/e5786-source" -mindepth 1 -maxdepth 6 -type f -path '*/drivers/net/tun.c' -print -quit)"
+          [[ -n "$KERNEL_SOURCE_FILE" ]] || { echo "drivers/net/tun.c not found in source archive"; exit 1; }
+          KERNEL_SRC="${KERNEL_SOURCE_FILE%/drivers/net/tun.c}"
+          echo "KERNEL_SRC=$KERNEL_SRC" >> "$GITHUB_ENV"
+
+          GCC_PATH="$(find "$RUNNER_TEMP/e5786-toolchain" \( -type f -o -type l \) \( -name arm-eabi-gcc -o -name arm-linux-androideabi-gcc -o -name arm-linux-gnueabi-gcc \) -print -quit)"
+          [[ -n "$GCC_PATH" ]] || { echo "No supported ARM GCC driver found in toolchain archive"; exit 1; }
+          GCC_VERSION="$("$GCC_PATH" -dumpversion)"
+          case "$GCC_VERSION" in
+            4.6*) ;;
+            *) echo "Found GCC $GCC_VERSION; this workflow requires GCC 4.6.x"; exit 1 ;;
+          esac
+
+          TOOLCHAIN_BIN="$(dirname "$GCC_PATH")"
+          GCC_NAME="$(basename "$GCC_PATH")"
+          CROSS_COMPILE="$TOOLCHAIN_BIN/${GCC_NAME%gcc}"
+          echo "CROSS_COMPILE=$CROSS_COMPILE" >> "$GITHUB_ENV"
+          echo "Using compiler: $("$GCC_PATH" --version | head -n 1)"
+          echo "Kernel source root: $KERNEL_SRC"
+
+      - name: Validate captured E5786 config and exports
+        run: |
+          set -euo pipefail
+          CONFIG_FILE=kernel/e5786-v7r2/config/e5786-running.config
+          EXPORTS_FILE=kernel/e5786-v7r2/config/e5786-exported-symbols.txt
+          test -s "$CONFIG_FILE" || {
+            echo "Missing kernel/e5786-v7r2/config/e5786-running.config"
+            echo "Copy the provided capture ZIP contents into this directory and push the branch."
+            exit 1
+          }
+          test -s "$EXPORTS_FILE" || {
+            echo "Missing kernel/e5786-v7r2/config/e5786-exported-symbols.txt"
+            echo "Copy the provided capture ZIP contents into this directory and push the branch."
+            exit 1
+          }
+          grep -qx 'CONFIG_MODULES=y' "$CONFIG_FILE"
+          grep -qx '# CONFIG_TUN is not set' "$CONFIG_FILE"
+          grep -qx '# CONFIG_MODVERSIONS is not set' "$CONFIG_FILE"
+          grep -qx 'alloc_netdev_mqs' "$EXPORTS_FILE"
+          grep -qx 'register_netdevice' "$EXPORTS_FILE"
+          echo "KERNEL_CONFIG=$GITHUB_WORKSPACE/$CONFIG_FILE" >> "$GITHUB_ENV"
+          echo "EXPORTS_FILE=$GITHUB_WORKSPACE/$EXPORTS_FILE" >> "$GITHUB_ENV"
+          echo "Validated user-captured E5786 config and exported symbol list."
+
+      - name: Build and validate TUN module candidate
+        env:
+          OUT_DIR: ${{ github.workspace }}/dist
+          EXPECTED_RELEASE: "3.4.5"
+          EXPECTED_VERMAGIC: "3.4.5 preempt mod_unload ARMv7"
+        run: |
+          set -euo pipefail
+          bash kernel/e5786-v7r2/scripts/build-tun-module.sh
+
+      - name: Upload module candidate and validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5786-hi6930-v7r2-tun-candidate
+          path: |
+            dist/tun.ko
+            dist/SHA256SUMS
+            dist/build-report.txt
+            dist/undefined-symbols.txt
+            dist/device-exports.txt
+            dist/unresolved-on-device.txt
+          retention-days: 14

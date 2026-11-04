@@ -1,0 +1,73 @@
+name: Generic Linux 3.4.5 ARMv7 TUN comparison build
+
+on:
+  push:
+    branches:
+      - research/e5786-v7r2-tun
+    paths:
+      - '.github/workflows/e5786-generic-v3.4.5-tun.yml'
+      - 'kernel/e5786-v7r2/scripts/build-generic-linux-3.4.5-tun.sh'
+      - 'kernel/e5786-v7r2/config/e5786-exported-symbols.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-generic-tun:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libncurses5-dev kmod python3 git curl xz-utils libc6-i386 lib32z1 lib32stdc++6
+
+      - name: Fetch upstream Linux 3.4.5 source
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch v3.4.5 https://github.com/gregkh/linux.git "$RUNNER_TEMP/linux-3.4.5"
+          grep -qx 'VERSION = 3' "$RUNNER_TEMP/linux-3.4.5/Makefile"
+          grep -qx 'PATCHLEVEL = 4' "$RUNNER_TEMP/linux-3.4.5/Makefile"
+          grep -qx 'SUBLEVEL = 5' "$RUNNER_TEMP/linux-3.4.5/Makefile"
+          echo "KERNEL_SRC=$RUNNER_TEMP/linux-3.4.5" >> "$GITHUB_ENV"
+          echo "UPSTREAM_COMMIT=$(git -C "$RUNNER_TEMP/linux-3.4.5" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Fetch GCC 4.6.x ARM cross-toolchain
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/im-0/e3372h-kmods.git "$RUNNER_TEMP/toolchain-repo"
+          git -C "$RUNNER_TEMP/toolchain-repo" sparse-checkout set arm-linux-androideabi-4.6-from-ndk-r8b-x86
+          TOOLCHAIN_BIN="$RUNNER_TEMP/toolchain-repo/arm-linux-androideabi-4.6-from-ndk-r8b-x86/bin"
+          CROSS_COMPILE="$TOOLCHAIN_BIN/arm-linux-androideabi-"
+          test -x "${CROSS_COMPILE}gcc"
+          "${CROSS_COMPILE}gcc" -dumpversion
+          "${CROSS_COMPILE}gcc" --version | head -n 1
+          echo "CROSS_COMPILE=$CROSS_COMPILE" >> "$GITHUB_ENV"
+
+      - name: Build generic ARMv7 TUN module and compare imports
+        env:
+          EXPORTS_FILE: ${{ github.workspace }}/kernel/e5786-v7r2/config/e5786-exported-symbols.txt
+          OUT_DIR: ${{ github.workspace }}/dist
+        run: |
+          set -euo pipefail
+          bash kernel/e5786-v7r2/scripts/build-generic-linux-3.4.5-tun.sh
+          echo "Upstream commit: $UPSTREAM_COMMIT" >> dist/build-report.txt
+
+      - name: Upload generic comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-linux-3.4.5-armv7-tun-comparison-only
+          path: |
+            dist/tun-generic-linux-3.4.5-armv7.ko
+            dist/SHA256SUMS
+            dist/build-report.txt
+            dist/elf-header.txt
+            dist/generic-vexpress.config
+            dist/undefined-symbols.txt
+            dist/e5786-device-exports.txt
+            dist/not-exported-by-e5786.txt
+          retention-days: 14
