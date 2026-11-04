@@ -65,7 +65,7 @@ BADVPN_TARBALL="$WORK/badvpn-$BADVPN_COMMIT.tar.gz"
 rm -rf "$WORK/badvpn"
 mkdir -p "$WORK/badvpn"
 tar -xzf "$BADVPN_TARBALL" --strip-components=1 -C "$WORK/badvpn"
-python3 "$ROOT/scripts/patch-badvpn-e5786.py" "$WORK/badvpn"
+python3 "$ROOT/scripts/patch-badvpn-e5786.py" "$ROOT" "$WORK/badvpn"
 
 # compile-tun2socks.sh builds the TUN packet reader + lwIP TCP stack + SOCKS5 bridge.
 (
