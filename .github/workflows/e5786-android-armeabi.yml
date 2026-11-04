@@ -138,58 +138,6 @@ jobs:
           )
 
 
-          # Patch old-Bionic compatibility using exact, explicit source markers.
-          log_path = Path("src/core_log.c")
-          log = log_path.read_text()
-
-          old_decl = "static int log_fork_registered,log_exit_registered;"
-          if old_decl not in log:
-              raise SystemExit("Could not find logger fork-state declaration")
-          new_decl = """#ifndef __ANDROID__
-          static int log_fork_registered;
-          #endif
-          static int log_exit_registered;""".replace("          ", "")
-          log = log.replace(old_decl, new_decl, 1)
-
-          block_start = log.find("static void log_fork_prepare")
-          block_end = log.find("
-
-static void format_timestamp", block_start)
-          if block_start < 0 or block_end < 0:
-              raise SystemExit("Could not locate logger fork callbacks")
-          log = (log[:block_start] + "#ifndef __ANDROID__
-          " +
-                 log[block_start:block_end] + "
-          #endif" + log[block_end:])
-
-          old_register = """    if (!log_fork_registered) {
-                  if (pthread_atfork(log_fork_prepare,log_fork_parent,log_fork_child)) return -1;
-                  log_fork_registered=1;
-              }""".replace("                  ", "        ").replace("              ", "    ")
-          if old_register not in log:
-              raise SystemExit("Could not locate pthread_atfork registration")
-          new_register = """#ifndef __ANDROID__
-              if (!log_fork_registered) {
-                  if (pthread_atfork(log_fork_prepare,log_fork_parent,log_fork_child)) return -1;
-                  log_fork_registered=1;
-              }
-          #endif""".replace("              ", "        ").replace("          ", "    ")
-          log = log.replace(old_register, new_register, 1)
-          log_path.write_text(log)
-
-          cert_path = Path("src/tls_certificate.c")
-          cert = cert_path.read_text()
-          old_home_branch = """#else
-              struct passwd pw;""".replace("              ", "    ")
-          new_home_branch = """#elif defined(__ANDROID__)
-              snprintf(out, PATH_MAX, "%s", "/online/vpn/config/tls-pins.txt");
-          #else
-              struct passwd pw;""".replace("              ", "    ").replace("          ", "")
-          if old_home_branch not in cert:
-              raise SystemExit("Could not locate TOFU home-directory branch")
-          cert = cert.replace(old_home_branch, new_home_branch, 1)
-          cert_path.write_text(cert)
-
           print("E5786 compatibility patches applied")
           PY
 
