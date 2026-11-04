@@ -1,0 +1,93 @@
+name: E5786 Redsocks ARMv5 build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/e5786-redsocks-armv5.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl perl make unzip autoconf automake libtool binutils
+
+      - name: Install Android NDK r14b
+        run: |
+          curl -fL --retry 3 https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip -o "$RUNNER_TEMP/ndk.zip"
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          NDK="$RUNNER_TEMP/android-ndk-r14b"
+          SYSROOT="$NDK/platforms/android-9/arch-arm"
+          TOOLBIN="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLBIN/arm-linux-androideabi-gcc"
+          echo "SYSROOT=$SYSROOT" >> "$GITHUB_ENV"
+          echo "TOOLBIN=$TOOLBIN" >> "$GITHUB_ENV"
+          echo "$TOOLBIN" >> "$GITHUB_PATH"
+
+      - name: Build static libevent for Android
+        run: |
+          set -eux
+          curl -fL --retry 3 https://github.com/libevent/libevent/releases/download/release-2.1.12-stable/libevent-2.1.12-stable.tar.gz -o "$RUNNER_TEMP/libevent.tar.gz"
+          tar -xzf "$RUNNER_TEMP/libevent.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/libevent-2.1.12-stable"
+          export CC="$TOOLBIN/arm-linux-androideabi-gcc"
+          export AR="$TOOLBIN/arm-linux-androideabi-ar"
+          export RANLIB="$TOOLBIN/arm-linux-androideabi-ranlib"
+          export CFLAGS="--sysroot=$SYSROOT -Os -march=armv5te -mfloat-abi=soft -fPIC"
+          ./configure --host=arm-linux-androideabi --prefix="$RUNNER_TEMP/libevent-arm" --disable-shared --enable-static --disable-openssl --disable-thread-support --disable-libevent-regress --disable-samples
+          make -j2
+          make install
+          test -s "$RUNNER_TEMP/libevent-arm/lib/libevent_core.a"
+
+      - name: Build redsocks for Android ARMv5
+        run: |
+          set -eux
+          curl -fL --retry 3 https://github.com/darkk/redsocks/archive/19b822e345f6a291f6cff6b168f1cfdfeeb2cd7d.tar.gz -o "$RUNNER_TEMP/redsocks.tar.gz"
+          tar -xzf "$RUNNER_TEMP/redsocks.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/redsocks-19b822e345f6a291f6cff6b168f1cfdfeeb2cd7d"
+          printf '#define USE_IPTABLES\n' > config.h
+          touch .depend
+          export CC="$TOOLBIN/arm-linux-androideabi-gcc"
+          export CFLAGS="--sysroot=$SYSROOT -Os -std=c99 -march=armv5te -mfloat-abi=soft -ffunction-sections -fdata-sections -I$RUNNER_TEMP/libevent-arm/include"
+          export LDFLAGS="--sysroot=$SYSROOT -static -Wl,--gc-sections"
+          make -j2 CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" LIBS="$RUNNER_TEMP/libevent-arm/lib/libevent_core.a"
+          test -s redsocks
+          chmod 755 redsocks
+          "$TOOLBIN/arm-linux-androideabi-readelf" -h redsocks
+          "$TOOLBIN/arm-linux-androideabi-readelf" -l redsocks
+          if "$TOOLBIN/arm-linux-androideabi-readelf" -d redsocks | grep -q NEEDED; then
+            echo "Unexpected dynamic dependency in redsocks"
+            exit 1
+          fi
+          file redsocks
+
+      - name: Package artifact
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$RUNNER_TEMP/redsocks-19b822e345f6a291f6cff6b168f1cfdfeeb2cd7d/redsocks" "$GITHUB_WORKSPACE/dist/redsocks-e5786-armv5"
+          cat > "$GITHUB_WORKSPACE/dist/README.txt" <<'EOF'
+          Redsocks for Huawei E5786
+          Android Bionic API 9 / ARMv5TE / soft-float
+          Statically linked with libevent 2.1.12
+          TCP transparent REDIRECT to upstream SOCKS5 only.
+          It is a relay adapter and does not implement VLESS itself.
+          EOF
+          cd "$GITHUB_WORKSPACE"
+          tar -czf dist/e5786-redsocks-armv5.tar.gz -C dist redsocks-e5786-armv5 README.txt
+          sha256sum dist/e5786-redsocks-armv5.tar.gz > dist/SHA256SUMS
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5786-redsocks-armv5
+          path: |
+            dist/e5786-redsocks-armv5.tar.gz
+            dist/SHA256SUMS
+          retention-days: 14
