@@ -31,6 +31,7 @@ make -C "$KERNEL_SRC" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" vexpress_defconfig
   --enable NET \
   --enable INET \
   --enable PREEMPT \
+  --enable EMBEDDED \
   --disable SMP \
   --disable MODVERSIONS \
   --disable LOCALVERSION_AUTO \
@@ -50,6 +51,7 @@ for pair in \
   'CONFIG_NET=y' \
   'CONFIG_INET=y' \
   'CONFIG_PREEMPT=y' \
+  'CONFIG_EMBEDDED=y' \
   'CONFIG_VMSPLIT_3G=y' \
   'CONFIG_PAGE_OFFSET=0xC0000000' \
   'CONFIG_TUN=m'; do
