@@ -1,0 +1,234 @@
+
+name: E5786 Android armeabi VLESS build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/e5786-android-armeabi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl perl make unzip \
+            python3 binutils
+
+      - name: Install Android NDK r14b
+        run: |
+          curl -fL --retry 3 \
+            https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip \
+            -o "$RUNNER_TEMP/ndk.zip"
+
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+
+          NDK="$RUNNER_TEMP/android-ndk-r14b"
+          SYSROOT="$NDK/platforms/android-9/arch-arm"
+          TOOLBIN="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin"
+
+          test -d "$SYSROOT"
+          test -x "$TOOLBIN/arm-linux-androideabi-gcc"
+
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "SYSROOT=$SYSROOT" >> "$GITHUB_ENV"
+          echo "TOOLBIN=$TOOLBIN" >> "$GITHUB_ENV"
+          echo "$TOOLBIN" >> "$GITHUB_PATH"
+
+      - name: Build OpenSSL 3.5.9
+        run: |
+          curl -fL --retry 3 \
+            https://www.openssl.org/source/openssl-3.5.9.tar.gz \
+            -o "$RUNNER_TEMP/openssl.tar.gz"
+
+          tar -xzf "$RUNNER_TEMP/openssl.tar.gz" \
+            -C "$RUNNER_TEMP"
+
+          cd "$RUNNER_TEMP/openssl-3.5.9"
+
+          export PATH="$TOOLBIN:$PATH"
+          export CFLAGS="-Os -march=armv5te -mfloat-abi=soft"
+
+          ./Configure android-arm \
+            -D__ANDROID_API__=9 \
+            no-shared \
+            no-asm \
+            no-tests \
+            no-apps \
+            no-async \
+            no-engine \
+            no-dso \
+            no-module \
+            no-zlib \
+            no-comp \
+            --prefix="$RUNNER_TEMP/openssl-arm"
+
+          make -j2
+          make install_sw
+
+          echo "OPENSSL_PREFIX=$RUNNER_TEMP/openssl-arm" \
+            >> "$GITHUB_ENV"
+
+      - name: Apply E5786 compatibility and memory patches
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit("Expected source text missing: " + path)
+              p.write_text(s.replace(old, new, 1))
+
+          replace_once(
+              "src/resolver.c",
+              "#ifndef __APPLE__\n"
+              "    status = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);\n"
+              "#endif",
+              "#if !defined(__APPLE__) && !defined(__ANDROID__)\n"
+              "    status = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);\n"
+              "#endif"
+          )
+
+          replace_once(
+              "src/resolver.c",
+              "#ifdef __APPLE__\n"
+              "        struct timespec until = "
+              "{.tv_sec=wait/1000,.tv_nsec=(long)(wait%1000)*1000000};\n"
+              "        int result = pthread_cond_timedwait_relative_np"
+              "(&query->ready, &resolver_lock, &until);\n"
+              "#else",
+              "#if defined(__APPLE__) || defined(__ANDROID__)\n"
+              "        struct timespec until = "
+              "{.tv_sec=wait/1000,.tv_nsec=(long)(wait%1000)*1000000};\n"
+              "        int result = pthread_cond_timedwait_relative_np"
+              "(&query->ready, &resolver_lock, &until);\n"
+              "#else"
+          )
+
+          replace_once(
+              "src/main.c",
+              "#define MAX_CLIENT_CONNECTIONS 256",
+              "#define MAX_CLIENT_CONNECTIONS 1"
+          )
+
+          replace_once(
+              "src/resolver.c",
+              "#define RESOLVER_WORKERS 4",
+              "#define RESOLVER_WORKERS 1"
+          )
+
+          replace_once(
+              "src/resolver.c",
+              "#define RESOLVER_QUEUE_LIMIT 512",
+              "#define RESOLVER_QUEUE_LIMIT 16"
+          )
+
+          print("E5786 compatibility patches applied")
+          PY
+
+      - name: Compile VLESS core
+        run: |
+          set -e
+
+          CC="$TOOLBIN/arm-linux-androideabi-gcc"
+          OUT="$GITHUB_WORKSPACE/vless-core-e5786-armv5"
+          OBJ="$RUNNER_TEMP/e5786-objects"
+
+          mkdir -p "$OBJ"
+
+          CFLAGS="--sysroot=$SYSROOT \
+            -D__ANDROID__=1 \
+            -D__ANDROID_API__=9 \
+            -Os -std=c11 \
+            -march=armv5te \
+            -mfloat-abi=soft \
+            -fno-strict-aliasing \
+            -ffunction-sections \
+            -fdata-sections \
+            -Wall -Wextra \
+            -Iinclude \
+            -I$OPENSSL_PREFIX/include"
+
+          for SRC in src/*.c; do
+            NAME=$(basename "${SRC%.c}")
+            echo "Compiling $SRC"
+            "$CC" $CFLAGS -c "$SRC" -o "$OBJ/$NAME.o"
+          done
+
+          "$CC" --sysroot="$SYSROOT" \
+            -Wl,--gc-sections \
+            -Wl,-s \
+            -o "$OUT" \
+            "$OBJ"/*.o \
+            "$OPENSSL_PREFIX/lib/libssl.a" \
+            "$OPENSSL_PREFIX/lib/libcrypto.a" \
+            -ldl -lm
+
+          test -s "$OUT"
+          chmod 755 "$OUT"
+
+      - name: Verify Android executable
+        run: |
+          set -e
+
+          BIN="$GITHUB_WORKSPACE/vless-core-e5786-armv5"
+
+          file "$BIN"
+
+          arm-linux-androideabi-readelf -h "$BIN"
+          arm-linux-androideabi-readelf -l "$BIN"
+          arm-linux-androideabi-readelf -A "$BIN"
+          arm-linux-androideabi-readelf -d "$BIN"
+
+          arm-linux-androideabi-readelf -l "$BIN" \
+            | grep -F '/system/bin/linker'
+
+          if arm-linux-androideabi-readelf -d "$BIN" \
+             | grep -E 'libssl\.so|libcrypto\.so'; then
+            echo "Unexpected dynamic OpenSSL dependency"
+            exit 1
+          fi
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+
+          cp vless-core-e5786-armv5 dist/
+
+          cat > dist/README.txt <<'EOF'
+          Huawei E5786 VLESS ARMv5 build
+          Android Bionic / API 9 baseline
+          ARMv5TE / soft-float
+
+          This is the VLESS core with a local SOCKS5 listener.
+          It is not yet a transparent router proxy.
+          EOF
+
+          tar -czf dist/e5786-vless-core-armv5.tar.gz \
+            -C dist vless-core-e5786-armv5 README.txt
+
+          sha256sum dist/e5786-vless-core-armv5.tar.gz \
+            > dist/SHA256SUMS
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5786-vless-core-armv5-android
+          path: |
+            dist/e5786-vless-core-armv5.tar.gz
+            dist/SHA256SUMS
+          retention-days: 14
