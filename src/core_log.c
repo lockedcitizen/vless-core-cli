@@ -35,7 +35,10 @@ static struct {
     unsigned count,ordinary;
     char report[384];
 } logger={.wake={-1,-1},.completed={-1,-1}};
-static int log_fork_registered,log_exit_registered;
+#ifndef __ANDROID__
+static int log_fork_registered;
+#endif
+static int log_exit_registered;
 _Static_assert(sizeof(logger)+sizeof(g_log_mutex) <= 128U*1024U,"log storage exceeds its budget");
 
 static void log_signal(int fd) {
@@ -66,6 +69,7 @@ static int log_pair(int descriptors[2]) {
     return 0;
 }
 
+#ifndef __ANDROID__
 static void log_fork_prepare(void) { pthread_mutex_lock(&g_log_mutex); }
 static void log_fork_parent(void) { pthread_mutex_unlock(&g_log_mutex); }
 static void log_fork_child(void) {
@@ -79,6 +83,7 @@ static void log_fork_child(void) {
     logger.started=logger.busy=0; logger.count=logger.ordinary=0; logger.sequence=logger.retry_ms=0;
     pthread_mutex_unlock(&g_log_mutex);
 }
+#endif
 
 static void format_timestamp(char *destination, size_t capacity) {
     struct timeval tv;
@@ -198,10 +203,12 @@ static int log_start(void) {
     uint64_t now=core_now_ms();
     if (now < logger.retry_ms) return -1;
     logger.retry_ms=now > UINT64_MAX-1000 ? UINT64_MAX : now+1000;
+#ifndef __ANDROID__
     if (!log_fork_registered) {
         if (pthread_atfork(log_fork_prepare,log_fork_parent,log_fork_child)) return -1;
         log_fork_registered=1;
     }
+#endif
     if (!log_exit_registered) { if (atexit(log_at_exit)) return -1; log_exit_registered=1; }
     if (log_pair(logger.wake) || log_pair(logger.completed)) goto failure;
     pthread_attr_t attributes;
