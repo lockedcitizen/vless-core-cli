@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""Apply the small-RAM, TCP-only E5786 profile to pinned BadVPN sources."""
+"""Apply small-RAM limits to vless-core-cli and pinned BadVPN tun2socks."""
 from pathlib import Path
 import sys
 
-root = Path(sys.argv[1])
+if len(sys.argv) != 3:
+    raise SystemExit("usage: patch-badvpn-e5786.py CORE_REPO BADVPN_SOURCE")
+core = Path(sys.argv[1])
+root = Path(sys.argv[2])
+
+# Keep the upstream default unchanged for ordinary builds; the E5786 build
+# overrides the limit to four concurrent client connections.
+main = core / "src/main.c"
+s = main.read_text()
+old = "#define MAX_CLIENT_CONNECTIONS 256"
+new = "#ifndef MAX_CLIENT_CONNECTIONS\n#define MAX_CLIENT_CONNECTIONS 256\n#endif"
+if old in s:
+    main.write_text(s.replace(old, new, 1))
+elif new not in s:
+    raise SystemExit("vless-core MAX_CLIENT_CONNECTIONS definition not found")
 
 opts = root / "lwip/custom/lwipopts.h"
 s = opts.read_text()
@@ -17,8 +31,10 @@ replacements = {
 }
 for old, new in replacements.items():
     if old not in s:
-        raise SystemExit("BadVPN lwIP option not found: " + old)
-    s = s.replace(old, new, 1)
+        if new not in s:
+            raise SystemExit("BadVPN lwIP option not found: " + old)
+    else:
+        s = s.replace(old, new, 1)
 opts.write_text(s)
 
 tun = root / "tun2socks/tun2socks.c"
@@ -33,6 +49,7 @@ replacement = (
     "        return ERR_ABRT;\n"
     "    }"
 )
-if needle not in s:
+if needle in s:
+    tun.write_text(s.replace(needle, replacement, 1))
+elif "num_clients >= 4" not in s:
     raise SystemExit("BadVPN TCP accept handler not found")
-tun.write_text(s.replace(needle, replacement, 1))
