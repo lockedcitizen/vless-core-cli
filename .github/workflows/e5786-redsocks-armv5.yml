@@ -66,6 +66,22 @@ jobs:
           replacement = chr(10).join(["static bool is_splice_good()", "{", "    return false;", "}", ""]) 
           s = s[:start] + replacement + s[end:]
           p.write_text(s)
+
+          # Strip unused UDP and fake-DNS subsystems; this E5786 target is TCP-only.
+          p = Path("main.c")
+          s = p.read_text()
+          for line in [
+              "extern app_subsys redudp_subsys;\\n",
+              "extern app_subsys dnstc_subsys;\\n",
+              "extern app_subsys dnsu2t_subsys;\\n",
+              "    &redudp_subsys,\\n",
+              "    &dnstc_subsys,\\n",
+              "    &dnsu2t_subsys,\\n",
+          ]:
+              if line not in s:
+                  raise SystemExit("Expected optional subsystem reference missing from main.c: " + repr(line))
+              s = s.replace(line, "", 1)
+          p.write_text(s)
           PY
 
           cat > "$RUNNER_TEMP/e5786-no-splice.h" <<'EOF'
@@ -88,7 +104,7 @@ jobs:
           export CC="$TOOLBIN/arm-linux-androideabi-gcc"
           export CFLAGS="--sysroot=$SYSROOT -Os -std=c99 -march=armv5te -mfloat-abi=soft -ffunction-sections -fdata-sections -I$RUNNER_TEMP/libevent-arm/include -include $RUNNER_TEMP/e5786-no-splice.h"
           export LDFLAGS="--sysroot=$SYSROOT -static -Wl,--gc-sections"
-          make -j2 CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" LIBS="$RUNNER_TEMP/libevent-arm/lib/libevent_core.a"
+          make -j2 CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" LIBS="$RUNNER_TEMP/libevent-arm/lib/libevent_core.a" OBJS="parser.o main.o redsocks.o log.o http-connect.o socks4.o socks5.o http-relay.o base.o base64.o md5.o http-auth.o utils.o gen/version.o"
           test -s redsocks
           chmod 755 redsocks
           "$TOOLBIN/arm-linux-androideabi-readelf" -h redsocks
