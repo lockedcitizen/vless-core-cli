@@ -34,6 +34,10 @@ make -C "$KERNEL_SRC" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" vexpress_defconfig
   --disable SMP \
   --disable MODVERSIONS \
   --disable LOCALVERSION_AUTO \
+  --disable ARM_PATCH_PHYS_VIRT \
+  --disable DEBUG_PREEMPT \
+  --enable VMSPLIT_3G \
+  --disable VMSPLIT_2G \
   --set-str LOCALVERSION "" \
   --module TUN
 
@@ -46,11 +50,22 @@ for pair in \
   'CONFIG_NET=y' \
   'CONFIG_INET=y' \
   'CONFIG_PREEMPT=y' \
+  'CONFIG_VMSPLIT_3G=y' \
+  'CONFIG_PAGE_OFFSET=0xC0000000' \
   'CONFIG_TUN=m'; do
   grep -qx "$pair" "$KERNEL_SRC/.config" || { echo "Required config missing after oldconfig: $pair" >&2; exit 1; }
 done
 grep -qx '# CONFIG_SMP is not set' "$KERNEL_SRC/.config" || {
   echo "Expected a UP build to mirror the E5786 vermagic shape" >&2; exit 1;
+}
+grep -qx '# CONFIG_ARM_PATCH_PHYS_VIRT is not set' "$KERNEL_SRC/.config" || {
+  echo "Expected ARM_PATCH_PHYS_VIRT disabled to match the E5786 capture" >&2; exit 1;
+}
+grep -qx '# CONFIG_DEBUG_PREEMPT is not set' "$KERNEL_SRC/.config" || {
+  echo "Expected DEBUG_PREEMPT disabled to match the E5786 capture" >&2; exit 1;
+}
+grep -qx '# CONFIG_VMSPLIT_2G is not set' "$KERNEL_SRC/.config" || {
+  echo "Expected 2G virtual split disabled" >&2; exit 1;
 }
 grep -qx '# CONFIG_MODVERSIONS is not set' "$KERNEL_SRC/.config" || {
   echo "MODVERSIONS must remain disabled for this comparison build" >&2; exit 1;
@@ -77,14 +92,15 @@ sha256sum "$OUT_DIR/tun-generic-linux-3.4.5-armv7.ko" > "$OUT_DIR/SHA256SUMS"
   echo "Kernel source version: $kver"
   echo "Cross compiler: $("${CROSS_COMPILE}gcc" --version | head -n 1)"
   echo "Compiler dumpversion: $gcc_version"
-  echo "Config: CONFIG_TUN=m; CONFIG_PREEMPT=y; CONFIG_SMP=n; CONFIG_MODVERSIONS=n"
+  echo "Config: CONFIG_TUN=m; E5786-matched PREEMPT/VMSPLIT/ARM_PATCH_PHYS_VIRT/DEBUG_PREEMPT flags; CONFIG_SMP=n; CONFIG_MODVERSIONS=n"
   echo "Expected E5786 vermagic: $EXPECTED_VERMAGIC"
   echo "Actual module vermagic: ${vermagic:-unavailable}"
   echo "E5786 vermagic match: $([[ "$vermagic" == "$EXPECTED_VERMAGIC" ]] && echo yes || echo no)"
   echo "Undefined imports: $(wc -l < "$OUT_DIR/undefined-symbols.txt")"
   echo "Imports absent from E5786 export capture: $(wc -l < "$OUT_DIR/not-exported-by-e5786.txt")"
   echo
-  echo "CRITICAL: This is a generic upstream module. It was not built from the E5786 vendor source tree."
+  echo "Build config uses the captured E5786 values for VMSPLIT_3G, PAGE_OFFSET, ARM_PATCH_PHYS_VIRT=n, and DEBUG_PREEMPT=n."
+  echo "CRITICAL: This is still a generic upstream VExpress module. It was not built from the E5786 vendor source tree."
   echo "A vermagic match and export-name match do not validate vendor structure layouts or fastip/sk_buff ABI."
   echo "Do not insmod this module on the E5786. Runtime interface creation may crash the device."
 } > "$OUT_DIR/build-report.txt"
