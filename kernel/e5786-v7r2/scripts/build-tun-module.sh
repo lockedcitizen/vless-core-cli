@@ -17,6 +17,7 @@ test -f "$KERNEL_SRC/include/linux/module.h"
 test -s "$KERNEL_CONFIG"
 test -s "$EXPORTS_FILE"
 test -x "${CROSS_COMPILE}gcc"
+mkdir -p "$OUT_DIR"
 
 version_value() {
     awk -F= -v key="$1" '$1 == key {gsub(/[[:space:]]/, "", $2); print $2}' "$KERNEL_SRC/Makefile"
@@ -38,7 +39,7 @@ case "$GCC_VERSION" in
         ;;
 esac
 
-echo "Compiler: $(" ${CROSS_COMPILE}gcc" --version | head -n 1)"
+echo "Compiler: $("${CROSS_COMPILE}gcc" --version | head -n 1)"
 echo "Kernel source: $KERNEL_SRC"
 echo "Kernel target: $EXPECTED_RELEASE"
 echo "Compiler version: $GCC_VERSION"
@@ -69,9 +70,13 @@ grep -qx 'CONFIG_MODULES=y' "$KERNEL_SRC/.config" || {
     echo "Captured config does not enable modules" >&2
     exit 1
 }
+if grep -qx 'CONFIG_MODVERSIONS=y' "$KERNEL_SRC/.config"; then
+    echo "Captured config unexpectedly enables MODVERSIONS; review symbol CRC handling" >&2
+    exit 1
+fi
 
 make -C "$KERNEL_SRC" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" prepare modules_prepare
-make -C "$KERNEL_SRC" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" M=drivers/net modules
+make -C "$KERNEL_SRC" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" M="$KERNEL_SRC/drivers/net" modules
 
 MODULE="$KERNEL_SRC/drivers/net/tun.ko"
 test -s "$MODULE"
@@ -85,17 +90,16 @@ fi
 readelf -h "$MODULE" | grep -Eq 'Class:[[:space:]]+ELF32'
 readelf -h "$MODULE" | grep -Eq 'Machine:[[:space:]]+ARM'
 
-nm -u "$MODULE" | awk 'NF {print $NF}' | sort -u > "$OUT_DIR.undefined-symbols.txt"
-sort -u "$EXPORTS_FILE" > "$OUT_DIR.device-exports.txt"
-comm -23 "$OUT_DIR.undefined-symbols.txt" "$OUT_DIR.device-exports.txt" > "$OUT_DIR.unresolved-on-device.txt"
+nm -u "$MODULE" | awk 'NF {print $NF}' | sort -u > "$OUT_DIR/undefined-symbols.txt"
+sort -u "$EXPORTS_FILE" > "$OUT_DIR/device-exports.txt"
+comm -23 "$OUT_DIR/undefined-symbols.txt" "$OUT_DIR/device-exports.txt" > "$OUT_DIR/unresolved-on-device.txt"
 
-if [[ -s "$OUT_DIR.unresolved-on-device.txt" ]]; then
+if [[ -s "$OUT_DIR/unresolved-on-device.txt" ]]; then
     echo "Module imports symbols not found in the captured E5786 export table:" >&2
-    cat "$OUT_DIR.unresolved-on-device.txt" >&2
+    cat "$OUT_DIR/unresolved-on-device.txt" >&2
     exit 1
 fi
 
-mkdir -p "$OUT_DIR"
 cp "$MODULE" "$OUT_DIR/tun.ko"
 {
     echo "E5786 Hi6930 / Balong V7R2 TUN module candidate"
