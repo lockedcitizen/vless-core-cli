@@ -79,23 +79,29 @@ jobs:
           echo "Using compiler: $("$GCC_PATH" --version | head -n 1)"
           echo "Kernel source root: $KERNEL_SRC"
 
-      - name: Restore captured E5786 config and exports
+      - name: Validate captured E5786 config and exports
         run: |
           set -euo pipefail
-          CONFIG_B64=kernel/e5786-v7r2/config/e5786-running.config.gz.b64
-          EXPORTS_B64=kernel/e5786-v7r2/config/e5786-exported-symbols.txt.gz.b64
-          test -s "$CONFIG_B64" || { echo "Missing captured E5786 kernel config"; exit 1; }
-          test -s "$EXPORTS_B64" || { echo "Missing captured E5786 exported symbols"; exit 1; }
-          base64 --decode "$CONFIG_B64" | gzip --decompress > "$RUNNER_TEMP/e5786-running.config"
-          base64 --decode "$EXPORTS_B64" | gzip --decompress > "$RUNNER_TEMP/e5786-exported-symbols.txt"
-          grep -qx 'CONFIG_MODULES=y' "$RUNNER_TEMP/e5786-running.config"
-          grep -qx '# CONFIG_TUN is not set' "$RUNNER_TEMP/e5786-running.config"
-          grep -qx '# CONFIG_MODVERSIONS is not set' "$RUNNER_TEMP/e5786-running.config"
-          grep -qx 'alloc_netdev_mqs' "$RUNNER_TEMP/e5786-exported-symbols.txt"
-          grep -qx 'register_netdevice' "$RUNNER_TEMP/e5786-exported-symbols.txt"
-          echo "KERNEL_CONFIG=$RUNNER_TEMP/e5786-running.config" >> "$GITHUB_ENV"
-          echo "EXPORTS_FILE=$RUNNER_TEMP/e5786-exported-symbols.txt" >> "$GITHUB_ENV"
-          echo "Restored device-captured config and exported symbol list."
+          CONFIG_FILE=kernel/e5786-v7r2/config/e5786-running.config
+          EXPORTS_FILE=kernel/e5786-v7r2/config/e5786-exported-symbols.txt
+          test -s "$CONFIG_FILE" || {
+            echo "Missing kernel/e5786-v7r2/config/e5786-running.config"
+            echo "Copy the provided capture ZIP contents into this directory and push the branch."
+            exit 1
+          }
+          test -s "$EXPORTS_FILE" || {
+            echo "Missing kernel/e5786-v7r2/config/e5786-exported-symbols.txt"
+            echo "Copy the provided capture ZIP contents into this directory and push the branch."
+            exit 1
+          }
+          grep -qx 'CONFIG_MODULES=y' "$CONFIG_FILE"
+          grep -qx '# CONFIG_TUN is not set' "$CONFIG_FILE"
+          grep -qx '# CONFIG_MODVERSIONS is not set' "$CONFIG_FILE"
+          grep -qx 'alloc_netdev_mqs' "$EXPORTS_FILE"
+          grep -qx 'register_netdevice' "$EXPORTS_FILE"
+          echo "KERNEL_CONFIG=$GITHUB_WORKSPACE/$CONFIG_FILE" >> "$GITHUB_ENV"
+          echo "EXPORTS_FILE=$GITHUB_WORKSPACE/$EXPORTS_FILE" >> "$GITHUB_ENV"
+          echo "Validated user-captured E5786 config and exported symbol list."
 
       - name: Build and validate TUN module candidate
         env:
