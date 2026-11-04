@@ -14,7 +14,7 @@ EXPECTED_VERMAGIC="3.4.5 preempt mod_unload ARMv7"
 [[ -s "$EXPORTS_FILE" ]] || { echo "Missing E5786 exports capture" >&2; exit 1; }
 [[ -x "${CROSS_COMPILE}gcc" ]] || { echo "ARM GCC not found: ${CROSS_COMPILE}gcc" >&2; exit 1; }
 
-kver=$(awk -F= '$1=="VERSION" {gsub(/[[:space:]]/,"",$2);v=$2} $1=="PATCHLEVEL" {gsub(/[[:space:]]/,"",$2);p=$2} $1=="SUBLEVEL" {gsub(/[[:space:]]/,"",$2);s=$2} END {print v"."p"."s}' "$KERNEL_SRC/Makefile")
+kver=$(awk '$1=="VERSION" {v=$3} $1=="PATCHLEVEL" {p=$3} $1=="SUBLEVEL" {s=$3} END {print v"."p"."s}' "$KERNEL_SRC/Makefile")
 [[ "$kver" == "$EXPECTED_RELEASE" ]] || { echo "Expected Linux $EXPECTED_RELEASE; found $kver" >&2; exit 1; }
 
 gcc_version=$("${CROSS_COMPILE}gcc" -dumpversion)
