@@ -54,8 +54,38 @@ jobs:
           cd "$RUNNER_TEMP/redsocks-19b822e345f6a291f6cff6b168f1cfdfeeb2cd7d"
           printf '#define USE_IPTABLES\n' > config.h
           touch .depend
+
+          # The E5786 kernel is old; force buffered relay mode. The unused
+          # splice functions remain in source, so provide a compile-time stub.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("redsocks.c")
+          s = p.read_text()
+          start = s.index("static bool is_splice_good()")
+          end = s.index("\nstatic int redsocks_onenter", start)
+          s = s[:start] + "static bool is_splice_good()\\n{\\n\\treturn false;\\n}\\n" + s[end:]
+          p.write_text(s)
+          PY
+
+          cat > "$RUNNER_TEMP/e5786-no-splice.h" <<'EOF'
+          #include <errno.h>
+          #include <sys/types.h>
+          static inline ssize_t e5786_no_splice(int in_fd, off_t *in_off,
+                                                int out_fd, off_t *out_off,
+                                                size_t len, unsigned int flags)
+          {
+              (void)in_fd; (void)in_off; (void)out_fd; (void)out_off;
+              (void)len; (void)flags;
+              errno = ENOSYS;
+              return -1;
+          }
+          #define SPLICE_F_MOVE 1
+          #define SPLICE_F_NONBLOCK 2
+          #define splice e5786_no_splice
+          EOF
+
           export CC="$TOOLBIN/arm-linux-androideabi-gcc"
-          export CFLAGS="--sysroot=$SYSROOT -Os -std=c99 -march=armv5te -mfloat-abi=soft -ffunction-sections -fdata-sections -I$RUNNER_TEMP/libevent-arm/include"
+          export CFLAGS="--sysroot=$SYSROOT -Os -std=c99 -march=armv5te -mfloat-abi=soft -ffunction-sections -fdata-sections -I$RUNNER_TEMP/libevent-arm/include -include $RUNNER_TEMP/e5786-no-splice.h"
           export LDFLAGS="--sysroot=$SYSROOT -static -Wl,--gc-sections"
           make -j2 CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" LIBS="$RUNNER_TEMP/libevent-arm/lib/libevent_core.a"
           test -s redsocks
@@ -77,6 +107,7 @@ jobs:
           Android Bionic API 9 / ARMv5TE / soft-float
           Statically linked with libevent 2.1.12
           TCP transparent REDIRECT to upstream SOCKS5 only.
+          Buffered relay mode; splice is disabled.
           It is a relay adapter and does not implement VLESS itself.
           EOF
           cd "$GITHUB_WORKSPACE"
