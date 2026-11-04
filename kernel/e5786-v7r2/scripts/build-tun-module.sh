@@ -39,7 +39,8 @@ case "$GCC_VERSION" in
         ;;
 esac
 
-echo "Compiler: $("${CROSS_COMPILE}gcc" --version | head -n 1)"
+COMPILER_DESCRIPTION="$("${CROSS_COMPILE}gcc" --version | head -n 1)"
+echo "Compiler: $COMPILER_DESCRIPTION"
 echo "Kernel source: $KERNEL_SRC"
 echo "Kernel target: $EXPECTED_RELEASE"
 echo "Compiler version: $GCC_VERSION"
@@ -105,7 +106,7 @@ cp "$MODULE" "$OUT_DIR/tun.ko"
     echo "E5786 Hi6930 / Balong V7R2 TUN module candidate"
     echo "Kernel release: $EXPECTED_RELEASE"
     echo "Vermagic: $VERMAGIC"
-    echo "Compiler: $("${CROSS_COMPILE}gcc" -dumpversion)"
+    echo "Compiler version: $GCC_VERSION"
     echo "Config: CONFIG_TUN=m"
     echo "MODVERSIONS: disabled in captured config"
     echo "Runtime load/interface creation: NOT TESTED"
