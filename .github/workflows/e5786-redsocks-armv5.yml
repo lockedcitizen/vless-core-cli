@@ -63,7 +63,8 @@ jobs:
           s = p.read_text()
           start = s.index("static bool is_splice_good()")
           end = s.index("\nstatic int redsocks_onenter", start)
-          s = s[:start] + "static bool is_splice_good()\\n{\\n\\treturn false;\\n}\\n" + s[end:]
+          replacement = chr(10).join(["static bool is_splice_good()", "{", "    return false;", "}", ""]) 
+          s = s[:start] + replacement + s[end:]
           p.write_text(s)
           PY
 
