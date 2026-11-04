@@ -59,12 +59,12 @@ jobs:
           tar -xf "$RUNNER_TEMP/kernel-source.tar" -C "$RUNNER_TEMP/e5786-source"
           tar -xf "$RUNNER_TEMP/toolchain.tar" -C "$RUNNER_TEMP/e5786-toolchain"
 
-          KERNEL_MAKEFILE="$(find "$RUNNER_TEMP/e5786-source" -mindepth 1 -maxdepth 6 -type f -path '*/drivers/net/tun.c' -print -quit)"
-          [[ -n "$KERNEL_MAKEFILE" ]] || { echo "drivers/net/tun.c not found in source archive"; exit 1; }
-          KERNEL_SRC="${KERNEL_MAKEFILE%/drivers/net/tun.c}"
+          KERNEL_SOURCE_FILE="$(find "$RUNNER_TEMP/e5786-source" -mindepth 1 -maxdepth 6 -type f -path '*/drivers/net/tun.c' -print -quit)"
+          [[ -n "$KERNEL_SOURCE_FILE" ]] || { echo "drivers/net/tun.c not found in source archive"; exit 1; }
+          KERNEL_SRC="${KERNEL_SOURCE_FILE%/drivers/net/tun.c}"
           echo "KERNEL_SRC=$KERNEL_SRC" >> "$GITHUB_ENV"
 
-          GCC_PATH="$(find "$RUNNER_TEMP/e5786-toolchain" -type f \\( -name arm-eabi-gcc -o -name arm-linux-androideabi-gcc -o -name arm-linux-gnueabi-gcc \\) -print -quit)"
+          GCC_PATH="$(find "$RUNNER_TEMP/e5786-toolchain" \( -type f -o -type l \) \( -name arm-eabi-gcc -o -name arm-linux-androideabi-gcc -o -name arm-linux-gnueabi-gcc \) -print -quit)"
           [[ -n "$GCC_PATH" ]] || { echo "No supported ARM GCC driver found in toolchain archive"; exit 1; }
           GCC_VERSION="$("$GCC_PATH" -dumpversion)"
           case "$GCC_VERSION" in
@@ -114,4 +114,5 @@ jobs:
             dist/build-report.txt
             dist/undefined-symbols.txt
             dist/device-exports.txt
+            dist/unresolved-on-device.txt
           retention-days: 14
