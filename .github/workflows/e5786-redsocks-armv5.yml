@@ -70,18 +70,21 @@ jobs:
           # Strip unused UDP and fake-DNS subsystems; this E5786 target is TCP-only.
           p = Path("main.c")
           s = p.read_text()
-          for line in [
-              "extern app_subsys redudp_subsys;\\n",
-              "extern app_subsys dnstc_subsys;\\n",
-              "extern app_subsys dnsu2t_subsys;\\n",
-              "    &redudp_subsys,\\n",
-              "    &dnstc_subsys,\\n",
-              "    &dnsu2t_subsys,\\n",
-          ]:
-              if line not in s:
-                  raise SystemExit("Expected optional subsystem reference missing from main.c: " + repr(line))
-              s = s.replace(line, "", 1)
-          p.write_text(s)
+          remove = {
+              "extern app_subsys redudp_subsys;",
+              "extern app_subsys dnstc_subsys;",
+              "extern app_subsys dnsu2t_subsys;",
+              "&redudp_subsys,",
+              "&dnstc_subsys,",
+              "&dnsu2t_subsys,",
+          }
+          lines = s.splitlines()
+          present = {line.strip() for line in lines}
+          missing = remove - present
+          if missing:
+              raise SystemExit("Missing optional subsystem lines: " + repr(sorted(missing)))
+          kept = [line for line in lines if line.strip() not in remove]
+          p.write_text(chr(10).join(kept) + chr(10))
           PY
 
           cat > "$RUNNER_TEMP/e5786-no-splice.h" <<'EOF'
