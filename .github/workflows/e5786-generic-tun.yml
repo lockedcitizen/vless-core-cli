@@ -1,0 +1,61 @@
+name: E5786 generic TUN module reference build
+
+# IMPORTANT:
+# This compiles the upstream Linux 3.4.5 tun.ko against a reference ARMv7
+# configuration. It is NOT a Huawei E5786 vendor-kernel build and must not be
+# installed on the modem. The exact Huawei kernel build tree is not available.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [e5786-armv5-tun]
+    paths:
+      - ".github/workflows/e5786-generic-tun.yml"
+      - "scripts/build-generic-tun-3.4.5.sh"
+      - "e5786/TUN-MODULE.md"
+
+permissions:
+  contents: read
+
+jobs:
+  build-reference:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ARM kernel build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-arm-linux-gnueabi             binutils-arm-linux-gnueabi bc bison flex libssl-dev kmod             curl ca-certificates xz-utils
+
+      - name: Build upstream Linux 3.4.5 TUN reference module
+        run: |
+          chmod +x scripts/build-generic-tun-3.4.5.sh
+          scripts/build-generic-tun-3.4.5.sh
+
+      - name: Verify module format and metadata
+        run: |
+          set -eux
+          file dist-e5786-tun-reference/tun.ko
+          arm-linux-gnueabi-readelf -h dist-e5786-tun-reference/tun.ko
+          modinfo dist-e5786-tun-reference/tun.ko
+          test "$(arm-linux-gnueabi-readelf -h dist-e5786-tun-reference/tun.ko | grep -c 'Machine:.*ARM')" -eq 1
+          test -s dist-e5786-tun-reference/tun-undefined-symbols.txt
+          cat dist-e5786-tun-reference/COMPATIBILITY.txt
+
+      - name: Package reference build
+        run: |
+          set -eux
+          tar -czf e5786-tun-linux-3.4.5-armv7-reference.tar.gz -C dist-e5786-tun-reference .
+          sha256sum e5786-tun-linux-3.4.5-armv7-reference.tar.gz > e5786-tun-linux-3.4.5-armv7-reference.tar.gz.sha256
+
+      - name: Upload reference artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5786-tun-linux-3.4.5-armv7-reference-NOT-FOR-INSTALL
+          path: |
+            e5786-tun-linux-3.4.5-armv7-reference.tar.gz
+            e5786-tun-linux-3.4.5-armv7-reference.tar.gz.sha256
+          retention-days: 30
