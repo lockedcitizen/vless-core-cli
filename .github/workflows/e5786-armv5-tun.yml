@@ -1,0 +1,66 @@
+name: E5786 ARMv5TE VLESS + TUN
+
+on:
+  push:
+    branches: [main, e5786-armv5-tun]
+    paths:
+      - ".github/workflows/e5786-armv5-tun.yml"
+      - "scripts/build-e5786-armv5.sh"
+      - "scripts/patch-badvpn-e5786.py"
+      - "src/**"
+      - "include/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/e5786-armv5-tun.yml"
+      - "scripts/build-e5786-armv5.sh"
+      - "scripts/patch-badvpn-e5786.py"
+      - "src/**"
+      - "include/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout vless-core-cli
+        uses: actions/checkout@v4
+
+      - name: Install ARMv5TE cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-arm-linux-gnueabi \
+            binutils-arm-linux-gnueabi perl make python3 curl ca-certificates
+
+      - name: Build static ARMv5TE VLESS + tun2socks
+        run: |
+          chmod +x scripts/build-e5786-armv5.sh
+          scripts/build-e5786-armv5.sh
+
+      - name: Verify ARM binaries
+        run: |
+          set -eux
+          file dist-e5786/vless-core-e5786-armv5 dist-e5786/tun2socks-e5786-armv5
+          arm-linux-gnueabi-readelf -h dist-e5786/vless-core-e5786-armv5
+          arm-linux-gnueabi-readelf -h dist-e5786/tun2socks-e5786-armv5
+          ! arm-linux-gnueabi-readelf -l dist-e5786/vless-core-e5786-armv5 | grep -q INTERP
+          ! arm-linux-gnueabi-readelf -l dist-e5786/tun2socks-e5786-armv5 | grep -q INTERP
+
+      - name: Package release
+        run: |
+          set -eux
+          tar -czf e5786-vless-tun-armv5te.tar.gz -C dist-e5786 .
+          sha256sum e5786-vless-tun-armv5te.tar.gz > e5786-vless-tun-armv5te.tar.gz.sha256
+
+      - name: Upload E5786 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5786-vless-tun-armv5te
+          path: |
+            e5786-vless-tun-armv5te.tar.gz
+            e5786-vless-tun-armv5te.tar.gz.sha256
+          retention-days: 30
